@@ -5,34 +5,46 @@ on:
     branches: [development]
   repository_dispatch:
     types: [trigger-deploy]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      LOCATION: ${{ secrets.LOCATION }}
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USER: ${{ secrets.SSH_USERNAME }}
-      DEPLOY_BRANCH: ${{ secrets.DEPLOY_BRANCH || 'development' }}
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
-          host: ${{ env.SSH_HOST }}
-          username: ${{ env.SSH_USER }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Without `envs:` the action does not forward runner environment into
+          # the remote shell, so every variable below would expand to "".
+          envs: LOCATION,DEPLOY_BRANCH,APP_PORT
           script: |
-            set -e
+            set -euo pipefail
 
-            cd LOCATION
-            git fetch origin
-            git checkout $DEPLOY_BRANCH
-            git pull origin $DEPLOY_BRANCH
+            cd "$LOCATION"
+            git fetch origin "$DEPLOY_BRANCH"
+            git checkout "$DEPLOY_BRANCH"
+            git reset --hard "origin/$DEPLOY_BRANCH"
 
-            docker compose down --volumes=false
-            docker compose up -d --build
+            docker compose up -d --build --remove-orphans --wait --wait-timeout 300
+
+            # Fail the deploy if the new containers do not come up healthy.
+            curl -fsS --retry 5 --retry-delay 5 \
+              "http://127.0.0.1:${APP_PORT:-8005}/api/v1/health/" > /dev/null
+            echo "Deploy OK"
+
+            docker image prune -f
+        env:
+          LOCATION: ${{ secrets.LOCATION }}
+          DEPLOY_BRANCH: ${{ secrets.DEPLOY_BRANCH || 'development' }}
+          APP_PORT: ${{ secrets.APP_PORT || '8005' }}

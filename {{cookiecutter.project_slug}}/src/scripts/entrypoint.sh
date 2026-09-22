@@ -1,13 +1,26 @@
 #!/bin/sh
+set -eu
 
-echo "Running migrations..."
-python manage.py makemigrations
-python manage.py migrate
+# No makemigrations: migrations are source code, not something to invent here.
+if [ "${RUN_MIGRATIONS:-True}" = "True" ]; then
+  echo "Running migrations..."
+  python manage.py migrate --noinput
+else
+  echo "Skipping migrations (RUN_MIGRATIONS=${RUN_MIGRATIONS})."
+fi
 
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "Starting server..."
-python -m uvicorn config.server.asgi:application --host 0.0.0.0 --port 8000 --workers 4 --lifespan off
+# A passed command overrides the server; the worker services rely on this.
+if [ "$#" -gt 0 ]; then
+  echo "Starting: $*"
+  exec "$@"
+fi
 
-exec "$@"
+echo "Starting server..."
+exec python -m uvicorn config.server.asgi:application \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --workers "${WEB_CONCURRENCY:-4}" \
+  --lifespan off

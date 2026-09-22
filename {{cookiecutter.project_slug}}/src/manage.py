@@ -3,12 +3,16 @@
 
 import os
 import sys
+from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "apps"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from config.bootstrap import setup_paths  # noqa: E402  (needs the path above)
 
 
 def main():
     """Run administrative tasks."""
+    setup_paths()
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
     try:
         from django.core.management import execute_from_command_line

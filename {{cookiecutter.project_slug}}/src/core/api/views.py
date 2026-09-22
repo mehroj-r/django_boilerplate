@@ -1,26 +1,5 @@
-from logging import getLogger
-
-from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, mixins, status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
-from core.utils.pagination import CustomPagination
-
-logger = getLogger(__name__)
-
-
-class PaginatedListMixin:
-    pagination_class = CustomPagination
-
-    def list(self, request, *args, **kwargs):
-        qs = self.filter_queryset(self.get_queryset())  # noqa
-        if qs:
-            result = self.paginated_queryset(qs, request)  # noqa
-            serializer = self.get_serializer(result, many=True)  # noqa
-            response = self.paginated_response(data=serializer.data)  # noqa
-            return Response(response)
-        return Response({"success": True, "message": "OK", "results": []})
 
 
 class CustomResponseMixin:
@@ -37,12 +16,12 @@ class CustomResponseMixin:
     - For error:
         {
             "success": false,
-            "message": <ERROR_MESSAGE>",
+            "message": <ERROR_MESSAGE>,
             "error": <error_data>
         }
     CAUTION: This mixin is only functional for the exceptions handled by DRF.
              It does not handle exceptions raised outside the DRF scope.
-             For the rest, you should use a custom exception handler.
+             For the rest, see core.api.exceptions.api_exception_handler.
     """
 
     SUCCESS_MESSAGE = "OK"
@@ -54,7 +33,7 @@ class CustomResponseMixin:
     }
 
     def finalize_response(self, request, response, *args, **kwargs):
-        response = super().finalize_response(request, response, *args, **kwargs)  # noqa
+        response = super().finalize_response(request, response, *args, **kwargs)
 
         if not isinstance(response, Response):
             return response
@@ -62,32 +41,29 @@ class CustomResponseMixin:
         if response.status_code in self.NO_BODY_STATUS_CODES:
             return response
 
+        # Paginated list responses already carry the envelope (see
+        # core.utils.pagination.CustomPagination), so leave them alone.
         if self._is_structured_response(response):
             return response
 
         if response.status_code < 400:
-            response = self._success_response(response=response)
-        else:
-            response = self._error_response(response=response)
+            return self._success_response(response=response)
+        return self._error_response(response=response)
 
-        return response
-
-    def _success_response(self, response: Response):
-        response_data = {
+    def _success_response(self, response: Response) -> Response:
+        response.data = {
             "success": True,
             "message": self.SUCCESS_MESSAGE,
             "data": response.data,
         }
-        response.data = response_data
         return response
 
-    def _error_response(self, response: Response):
-        response_data = {
+    def _error_response(self, response: Response) -> Response:
+        response.data = {
             "success": False,
             "message": self.ERROR_MESSAGE,
             "error": response.data,
         }
-        response.data = response_data
         return response
 
     @staticmethod
@@ -96,46 +72,19 @@ class CustomResponseMixin:
 
 
 class BaseAPIView(CustomResponseMixin, generics.GenericAPIView):
-    ...
+    """Base for every endpoint in this project.
 
-    def _parse_error_message(self, errors):
-        message = None
-        _errors = {}
-        logger.error(errors)
-        try:
-            items = errors.items()
-        except AttributeError:
-            if isinstance(errors, list):
-                return {"errors": {"detail": errors}, "message": message}
-            return {"errors": errors, "message": message}
-        for key, error in items:
-            _error = []
-            if isinstance(error, str):
-                _error = [error]
-            elif isinstance(error, (list, tuple)):
-                _error = error
-            elif isinstance(error, dict):
-                _parsed_error = self._parse_error_message(error)
-                _error = _parsed_error.get("errors")
-                message = _parsed_error.get("message")
-            else:
-                logger.error("Error occurred while parsing error message")
-                logger.error(error)
-                raise ValueError(_("Error message is invalid"))
-            _errors[key] = _error
-            if message is None:
-                message = _error[0]
-        return {"errors": _errors, "message": message}
+    Permissions come from REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"]
+    (IsAuthenticated); override `permission_classes` per view to widen access.
+    """
 
 
-class ListAPIView(mixins.ListModelMixin, PaginatedListMixin, BaseAPIView):
+class ListAPIView(mixins.ListModelMixin, BaseAPIView):
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
 
 
 class CreateAPIView(mixins.CreateModelMixin, BaseAPIView):
-    permission_classes = (IsAuthenticated,)
-
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
 
@@ -154,9 +103,5 @@ class UpdateAPIView(mixins.UpdateModelMixin, BaseAPIView):
 
 
 class DestroyAPIView(mixins.DestroyModelMixin, BaseAPIView):
-    permission_classes = (IsAuthenticated,)
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def delete(self, request, *args, **kwargs):
+        return self.destroy(request, *args, **kwargs)

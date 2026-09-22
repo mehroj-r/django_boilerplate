@@ -5,6 +5,6 @@ from api.v1.core.views.misc import HealthAPIView, TestAPIView
 app_name = "misc"
 
 urlpatterns = [
-    path("health/", HealthAPIView.as_view(), name="health-api"),
-    path("test/", TestAPIView.as_view(), name="test-api"),
+    path("health/", HealthAPIView.as_view(), name="health"),
+    path("test/", TestAPIView.as_view(), name="test"),
 ]

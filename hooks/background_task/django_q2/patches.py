@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from patching.deps import add_dependencies
 from patching.engine import PatchSpec
 from patching.ops import FilePatcher
 
@@ -12,12 +13,7 @@ def read_snippet(filename: str) -> str:
 
 
 def apply_dependencies(patcher: FilePatcher) -> None:
-    patcher.ensure_insert_after(
-        "pyproject.toml",
-        '    "uvicorn>=0.37.0",\n',
-        '    "django-q2>=1.7.5",\n    "redis>=5.2.1",\n',
-        marker='    "django-q2>=1.7.5",',
-    )
+    add_dependencies(patcher, "django-q2>=1.7.5", "redis>=5.2.1")
 
 
 def apply_settings(patcher: FilePatcher, project_slug: str) -> None:
@@ -30,12 +26,10 @@ def apply_settings(patcher: FilePatcher, project_slug: str) -> None:
         marker='    "django_q",',
     )
 
-    patcher.ensure_insert_before(
-        "src/config/settings/base.py",
-        'CORS_URLS_REGEX = r"^/api/.*$"\n',
-        f"{q2_settings}\n\n",
-        marker="Q_CLUSTER",
-    )
+    # Appended rather than inserted mid-file so REDIS_URL (defined in the
+    # caching block) is already in scope.
+    patcher.ensure_contains("src/config/settings/base.py", q2_settings)
+    patcher.ensure_contains(".env.example", read_snippet("q2_env.txt"))
 
 
 def apply_docker(patcher: FilePatcher, docker_prefix: str) -> None:
@@ -45,14 +39,14 @@ def apply_docker(patcher: FilePatcher, docker_prefix: str) -> None:
     patcher.ensure_insert_before(
         "docker-compose.yml",
         "  web:\n",
-        f"{q2_docker}\n",
+        f"{q2_docker}\n\n",
         marker=f'    container_name: "{docker_prefix}-redis-dev"',
     )
 
     patcher.ensure_insert_before(
         "docker-compose.prod.yml",
         "  web:\n",
-        f"{q2_docker_prod}\n",
+        f"{q2_docker_prod}\n\n",
         marker=f'    container_name: "{docker_prefix}-redis-prod"',
     )
 

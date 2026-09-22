@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from patching.deps import add_dependencies
 from patching.engine import PatchSpec
 from patching.ops import FilePatcher
 
@@ -12,18 +13,23 @@ def read_snippet(filename: str) -> str:
 
 
 def apply_dependencies(patcher: FilePatcher) -> None:
-    patcher.ensure_insert_after(
-        "pyproject.toml",
-        '    "django-filter>=25.1",\n',
-        '    "django-unfold>=0.63.0",\n',
-        marker='    "django-unfold>=0.63.0",',
-    )
+    add_dependencies(patcher, "django-unfold>=0.63.0")
 
 
 def apply_admin_import(patcher: FilePatcher) -> None:
-    patcher.ensure_replace(
+    """Swap Django's ModelAdmin for unfold's, keeping the import block sorted.
+
+    A straight in-place replacement would leave `unfold` sorted above
+    `django_softdelete`, which fails `ruff check` in the generated project.
+    """
+    patcher.ensure_remove(
         "src/core/admin.py",
         "from django.contrib.admin import ModelAdmin\n",
+        marker="from unfold.admin import ModelAdmin",
+    )
+    patcher.ensure_insert_after(
+        "src/core/admin.py",
+        "from django_softdelete.filters import SoftDeleteFilter\n",
         "from unfold.admin import ModelAdmin\n",
         marker="from unfold.admin import ModelAdmin",
     )

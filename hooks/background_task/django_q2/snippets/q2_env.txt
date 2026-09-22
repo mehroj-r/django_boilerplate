@@ -1,0 +1,10 @@
+
+# ---------------------------------------------------------------------------
+# Background tasks (Django-Q2)
+# ---------------------------------------------------------------------------
+# `redis` is the compose service name; use localhost when running bare-metal.
+REDIS_URL=redis://redis:6379/0
+REDIS_PORT=6379
+# Cache is in-process unless set. Keep it off the broker so an outage
+# cannot 500 every throttled request.
+# CACHE_URL=redis://redis:6379/1

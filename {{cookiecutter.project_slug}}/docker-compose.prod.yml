@@ -1,13 +1,19 @@
+# Production stack. Uses its own compose project name so it never shares
+# volumes or container names with the development stack.
+name: "{{ cookiecutter.project_slug }}-prod"
+
 services:
   db:
     container_name: "{{ cookiecutter.docker_name_prefix }}-db-prod"
     image: postgres:18-alpine
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # postgres:18+ requires the mount at /var/lib/postgresql, not
+      # .../data -- the image refuses to start on the old path.
+      - postgres_data:/var/lib/postgresql
     ports:
       - "127.0.0.1:${DB_PORT}:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
       start_period: 10s
       interval: 5s
       retries: 5
@@ -20,15 +26,15 @@ services:
   web:
     container_name: "{{ cookiecutter.docker_name_prefix }}-web-prod"
     build: .
-    entrypoint: /app/scripts/entrypoint.sh
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
+      CDN_ROOT: /cdn
     volumes:
-      - app_data:/app/cdn
+      - app_data:/cdn
     ports:
-        - "127.0.0.1:${APP_PORT}:8000"
+      - "127.0.0.1:${APP_PORT}:8000"
     healthcheck:
-      test: [ "CMD-SHELL", "./scripts/healthcheck.sh" ]
+      test: [ "CMD-SHELL", "/app/scripts/healthcheck.sh" ]
       interval: 30s
       timeout: 10s
       retries: 5
