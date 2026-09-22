@@ -37,9 +37,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-# The hook snippets are source for the generated project, where account/api/
-# config/core are first-party. Mirror that here so a snippet is sorted the same
-# way in both places.
+# Mirrors the generated project, so snippets sort the same in both places.
 known-first-party = ["account", "api", "config", "core", "tests"]
 
 [tool.pytest.ini_options]

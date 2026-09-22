@@ -1,8 +1,6 @@
 from .base import *  # noqa: F403
 
-# Local development conveniences. Anything that must also hold when DEBUG is
-# off (JWT lifetimes, CORS) lives in base.py -- only genuine debug-only tooling
-# is gated below.
+# Only debug-only tooling is gated below; JWT and CORS live in base.py.
 
 CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True, cast=bool)  # noqa: F405
 

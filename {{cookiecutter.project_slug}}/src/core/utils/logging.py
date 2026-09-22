@@ -46,8 +46,7 @@ class TelegramErrorHandler(logging.Handler):
         if not self.enabled:
             return
         try:
-            # Format a copy so escaping never leaks into the console handler,
-            # which shares the same record instance.
+            # Copy: the console handler shares this record.
             safe = copy.copy(record)
             safe.msg = html.escape(record.getMessage())
             safe.args = ()
@@ -76,8 +75,7 @@ class TelegramErrorHandler(logging.Handler):
                 "parse_mode": "HTML",
             }
         ).encode("utf-8")
-        # S310: api_url is built from a literal https:// Telegram endpoint, so
-        # no user-controlled scheme can reach urlopen.
+        # S310: api_url is a literal https:// endpoint, no user-controlled scheme.
         request = urllib.request.Request(  # noqa: S310
             self.api_url,
             data=payload,

@@ -22,8 +22,7 @@ class BaseSoftDeleteModelAdmin(BaseModelAdmin):
     """
 
     def get_queryset(self, request) -> Any:
-        # Mirrors ModelAdmin.get_queryset but reads through global_objects so
-        # soft-deleted rows stay visible in the changelist.
+        # global_objects so soft-deleted rows stay visible.
         queryset = self.model.global_objects.get_queryset()
         ordering = self.get_ordering(request)
         if ordering:
@@ -40,9 +39,8 @@ class BaseSoftDeleteModelAdmin(BaseModelAdmin):
         actions = super().get_actions(request)
         actions.pop(REGULAR_DELETE_ACTION_NAME, None)
 
-        # SoftDeleteFilter only ever sets "true" or "false"; anything else (an
-        # absent filter, or a hand-typed query string) means "show everything".
-        # A dict lookup here would raise KeyError and 500 the changelist.
+        # Anything but "true"/"false" means show everything; a dict lookup here
+        # would KeyError and 500 the changelist.
         deleted_filter_value = request.GET.get(SoftDeleteFilter.parameter_name)
 
         if deleted_filter_value == "true":

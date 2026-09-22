@@ -126,9 +126,7 @@ LOCALE_PATHS = [BASE_DIR / "locales"]
 STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
 
-# Collected static files and uploads share one root so a single volume can be
-# mounted over it. In the container this is /cdn (see Dockerfile + compose);
-# locally it defaults to <project>/cdn next to src/.
+# Single root so one volume covers both. /cdn in the container.
 CDN_ROOT = Path(config("CDN_ROOT", default=str(BASE_DIR.parent / "cdn")))
 
 STATIC_ROOT = CDN_ROOT / "static"
@@ -166,8 +164,7 @@ LOGGING = {
                 "CRITICAL": "bold_red",
             },
         },
-        # parse_mode=HTML: TelegramErrorHandler escapes every interpolated
-        # value, so only the tags below are ever treated as markup.
+        # TelegramErrorHandler escapes every value, so only these tags are markup.
         "telegram": {
             "format": (
                 "<b>🚨 {{ cookiecutter.project_name }} error alert</b>\n"
@@ -261,16 +258,14 @@ SIMPLE_JWT = {
 }
 
 # --- CORS -------------------------------------------------------------------
-# Only /api/* is CORS-enabled. Dev settings relax this; production must list
-# origins explicitly via CORS_ALLOWED_ORIGINS.
+# Production must list origins explicitly; dev relaxes this.
 CORS_URLS_REGEX = r"^/api/.*$"
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=csv_list)
 CORS_ALLOW_CREDENTIALS = config("CORS_ALLOW_CREDENTIALS", default=False, cast=bool)
 
 # --- Caching ----------------------------------------------------------------
-# Deliberately NOT tied to REDIS_URL (the background-task broker). Throttling
-# reads the cache on every request, so a broker outage -- or simply running the
-# tests without Redis -- must not take the API down. Opt in explicitly.
+# Not tied to REDIS_URL: throttling reads the cache on every request, so a
+# broker outage must not take the API down.
 CACHE_URL = config("CACHE_URL", default="")
 CACHES = {
     "default": {

@@ -157,8 +157,7 @@ def main() -> int:
         applied = engine.run(patches)
         print(f"Applied hook patches: {', '.join(applied)}")
 
-    # Must run after the patches: they add dependencies to pyproject.toml and
-    # extra variables to .env.example.
+    # After the patches: they add deps and env vars these two read.
     write_env_file()
     write_lock_file()
     return 0

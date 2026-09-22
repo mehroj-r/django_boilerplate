@@ -9,13 +9,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# The dev compose stack runs config.settings.dev, which imports
-# debug_toolbar/django_extensions from the dev dependency group. Production
-# builds stay lean by leaving INSTALL_DEV at false.
+# config.settings.dev imports debug_toolbar; production stays lean at false.
 ARG INSTALL_DEV=false
 
-# uv.lock is generated at project creation, so builds are reproducible.
-# Regenerate it with `just lock` whenever pyproject.toml changes.
+# uv.lock is generated at project creation; `just lock` to refresh it.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \

@@ -36,9 +36,8 @@ class UserManager(SoftDeleteManager, BaseUserManager):
             extra_fields["email"] = self.normalize_email(email)
 
         user = self.model(**{self.model.USERNAME_FIELD: username}, **extra_fields)
-        # set_password is the single place a raw password is hashed. Never hash
-        # in Model.save(): it cannot tell a raw password from an already-hashed
-        # one, and it mangles set_unusable_password()'s "!" marker.
+        # The only place a raw password is hashed. Never do this in save():
+        # it cannot tell raw from hashed, and mangles the "!" unusable marker.
         user.set_password(password)
         user.save(using=self._db)
         return user

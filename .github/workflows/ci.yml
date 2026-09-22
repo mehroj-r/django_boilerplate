@@ -20,9 +20,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-          # Every job runs `uv sync` on the same root project, so without a
-          # distinct suffix they all compute the same cache key and race to
-          # reserve it ("another job may be creating this cache").
+          # Distinct per job: otherwise every job computes the same cache key
+          # and they race to reserve it.
           cache-suffix: lint
       - run: uv sync --locked
       - name: ruff
@@ -35,7 +34,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # setup-uv publishes no floating major tag past v7, so pin exactly.
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -76,15 +74,13 @@ jobs:
       ALLOWED_HOSTS: localhost,127.0.0.1
     steps:
       - uses: actions/checkout@v7
-      # setup-uv publishes no floating major tag past v7, so pin exactly.
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-suffix: ${{ matrix.api_framework }}-${{ matrix.admin_ui }}-${{ matrix.background_task }}
       - run: uv sync --locked
 
-      # Must be a real key: `check --deploy` rejects anything under 50 chars
-      # (security.W009), which is exactly the guard we want to keep.
+      # check --deploy rejects keys under 50 chars (security.W009).
       - name: Generate a SECRET_KEY for this run
         run: echo "DJANGO_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
@@ -107,9 +103,7 @@ jobs:
         working-directory: ./build
         env:
           DJANGO_SETTINGS_MODULE: config.settings.prod
-          # Exercise the hardened path. The template ships safe defaults
-          # (HSTS off, preload off) so a first deploy cannot brick a domain;
-          # these values prove the settings are wired, not that you must use them.
+          # Proves the HSTS settings are wired; the template's defaults are off.
           SECURE_HSTS_SECONDS: "31536000"
           SECURE_HSTS_PRELOAD: "True"
         run: uv run src/manage.py check --deploy --fail-level WARNING
@@ -133,7 +127,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # setup-uv publishes no floating major tag past v7, so pin exactly.
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -143,10 +136,8 @@ jobs:
       - name: Generate project
         run: uv run python scripts/generate-project.py ./build --no-input --force
 
-      # This is the check that catches the whole class of failure static review
-      # misses: a project that imports fine but cannot actually boot -- a
-      # missing uv.lock, an entrypoint that cannot import the apps package, a
-      # healthcheck pointed at a 404, or a static volume mounted on the wrong path.
+      # Catches what static review cannot: a project that imports fine but
+      # cannot actually boot.
       - name: Bring the stack up
         working-directory: ./build
         run: |

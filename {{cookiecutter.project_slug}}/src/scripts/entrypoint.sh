@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-# `makemigrations` is deliberately NOT run here: migrations are source code and
-# must be reviewed and committed, never invented at container start.
+# No makemigrations: migrations are source code, not something to invent here.
 if [ "${RUN_MIGRATIONS:-True}" = "True" ]; then
   echo "Running migrations..."
   python manage.py migrate --noinput
@@ -13,8 +12,7 @@ fi
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-# Anything passed as a command overrides the server (used by the worker
-# services, which share this image).
+# A passed command overrides the server; the worker services rely on this.
 if [ "$#" -gt 0 ]; then
   echo "Starting: $*"
   exec "$@"

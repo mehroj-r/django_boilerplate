@@ -7,8 +7,7 @@ from django.core.management import BaseCommand, CommandError
 
 LOCAL_APPS_MARKER = "LOCAL_APPS = ["
 URLPATTERNS_MARKER = "urlpatterns = ["
-# Present in api/v<n>/urls.py only when the project uses django-modern-rest,
-# whose controllers are registered on a Router instead of a urlpatterns list.
+# Only present when the project uses django-modern-rest.
 ROUTER_MARKER = "router.include("
 
 
@@ -44,9 +43,7 @@ class Command(BaseCommand):
             if existing.exists():
                 raise CommandError(f"Path already exists, refusing to overwrite: {existing}")
 
-        # -----------------------------------------------------
-        # 1. Create API structure
-        # -----------------------------------------------------
+        # 1. API module
         self.create_files(
             api_root,
             {
@@ -58,9 +55,7 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS(f"Created API module: {api_root}"))
 
-        # -----------------------------------------------------
-        # 2. Create App structure
-        # -----------------------------------------------------
+        # 2. Django app
         self.create_files(
             app_root,
             {
@@ -88,18 +83,14 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS(f"Created Django app: {app_root}"))
 
-        # -----------------------------------------------------
-        # 3. Register the app and route its URLs
-        # -----------------------------------------------------
+        # 3. Register and route it
         self.add_to_local_apps(self.get_settings_file(), app_name)
         self.add_to_api_urls(base_dir / "api" / version / "urls.py", app_name, version)
 
         self.stdout.write(self.style.SUCCESS("App generation complete!"))
         self.stdout.write(f"Next: define models in apps/{app_name}/models.py, then `just makemigrations {app_name}`.")
 
-    # ---------------------------------------------------------
-    # Validation
-    # ---------------------------------------------------------
+    # --- validation ---
 
     @staticmethod
     def validate_app_name(app_name: str) -> None:
@@ -115,9 +106,7 @@ class Command(BaseCommand):
         if not re.fullmatch(r"v\d+", version):
             raise CommandError(f"--ver must look like 'v1', got '{version}'.")
 
-    # ---------------------------------------------------------
-    # Utility Helpers
-    # ---------------------------------------------------------
+    # --- helpers ---
 
     @staticmethod
     def _write_file(path: Path, content: str = "") -> None:
