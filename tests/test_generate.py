@@ -80,10 +80,19 @@ class TestDefaultProject:
         assert not any("makemigrations" in line for line in commands), commands
         assert "exec python -m uvicorn config.server.asgi:application \\" in entrypoint
 
-    def test_exception_handler_path_is_importable(self, default_project):
-        """import_string splits on the last dot, so it must name a function."""
+    def test_exception_handler_is_the_library_function(self, default_project):
+        """drf-standardized-errors' AutoSchema compares this by identity.
+
+        Pointing it at a project callable still produces correct responses but
+        silently drops every error response from the OpenAPI schema, so project
+        customization has to go through DRF_STANDARDIZED_ERRORS instead.
+        """
         settings = (default_project / "src/config/settings/base.py").read_text()
-        assert '"EXCEPTION_HANDLER": "core.api.exceptions.api_exception_handler"' in settings
+
+        assert '"EXCEPTION_HANDLER": "drf_standardized_errors.handler.exception_handler"' in settings
+        assert '"EXCEPTION_HANDLER_CLASS": "core.api.exceptions.ApiExceptionHandler"' in settings
+        assert '"EXCEPTION_FORMATTER_CLASS": "core.api.errors.EnvelopedExceptionFormatter"' in settings
+        assert '"DEFAULT_SCHEMA_CLASS": "core.api.errors.EnvelopedAutoSchema"' in settings
 
 
 class TestLicense:
@@ -179,14 +188,23 @@ class TestOptionMatrix:
         if api_framework == "django-modern-rest":
             assert any(dep.startswith("django-modern-rest") for dep in deps), deps
             assert not any(dep.startswith("djangorestframework") for dep in deps), deps
+            assert not any(dep.startswith("drf-standardized-errors") for dep in deps), deps
             assert "DMR_SETTINGS" in settings
             assert "REST_FRAMEWORK" not in settings
+            assert "drf_standardized_errors" not in settings
             # dmr controllers are invisible unless routed through its Router.
             assert "from dmr.routing import Router" in auth_urls
         else:
             assert any(dep.startswith("djangorestframework") for dep in deps), deps
+            assert any(dep.startswith("drf-standardized-errors") for dep in deps), deps
             assert "REST_FRAMEWORK" in settings
             assert "DMR_SETTINGS" not in settings
+            assert '"drf_standardized_errors",' in settings
+
+        # Both flows answer with the same error envelope; core.api.errors is
+        # where each one implements it.
+        errors_module = (project / "src/core/api/errors.py").read_text()
+        assert "success" in errors_module
 
 
 def _generate(tmp_path_factory, **context):

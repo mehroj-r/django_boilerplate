@@ -88,17 +88,41 @@ and `wsgi.py` — calls it. If you add another entrypoint, call it there too.
 
 ### Response envelope
 
-Every response is wrapped, so clients parse one shape:
-
 ```jsonc
 // success
 { "success": true,  "message": "OK",  "data": { } }
-// error
-{ "success": false, "message": "email: This field is required.", "error": "invalid" }
 // list (paginated)
 { "success": true, "message": "OK", "results": [], "total_count": 0,
   "page": 1, "page_count": 1, "per_page": 10 }
 ```
+
+Errors use the same envelope, with the failure described under `error`:
+
+```jsonc
+{
+  "success": false,
+  "message": "email: This field is required.",
+  "error": {
+    "type": "validation_error",          // or client_error / server_error
+    "errors": [
+      { "code": "required", "detail": "This field is required.", "attr": "email" }
+    ]
+  }
+}
+```
+
+This error contract is identical whichever `api_framework` you picked, and
+`src/tests/test_errors.py` asserts it. Where the shape comes from differs:
+`drf-standardized-errors` on the drf side, `Controller.error_model` plus
+`format_error` on the django-modern-rest side. Either way `core/api/errors.py`
+is the file that defines it, and `core/api/exceptions.py` is where you map your
+own exception types into it.
+
+Two honest caveats on django-modern-rest. Success responses are *not* wrapped
+there -- `BaseController.ok()` exists if you want to, but endpoints return their
+payload directly. And with the msgspec serializer a validation failure reports
+only the first bad field, where drf reports all of them at once, because msgspec
+stops at the first error.
 
 ### Soft deletes
 

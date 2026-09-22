@@ -28,9 +28,8 @@ class JWTAuthTests(TestCase):
     def test_bad_password_returns_401_in_the_error_envelope(self):
         """Guards REST_FRAMEWORK["EXCEPTION_HANDLER"].
 
-        import_string splits that setting on the last dot, so pointing it at a
-        "module.Class.method" path fails to import and turns every handled
-        APIException into a 500.
+        See tests.test_errors for the full error contract; this only checks
+        that the auth endpoints go through it too.
         """
         response = self.login(password="wrong-password")
 

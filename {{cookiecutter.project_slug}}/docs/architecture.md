@@ -43,10 +43,24 @@ skips responses that already contain `success` and `message`, which is how
 paginated list responses (built by `CustomPagination`) pass through untouched,
 and skips 204/205/304, which must have no body.
 
-Errors are shaped by `core.api.exceptions.api_exception_handler`. That setting
-is resolved with `import_string`, which splits on the **last** dot — so it must
-name a module-level function. Pointing it at `SomeClass.method` fails to import
-and DRF quietly falls back to raising, turning every 400 and 401 into a 500.
+Errors are shaped in `core.api.errors`, which both API frameworks implement so
+the two emit the same body. On drf that means a `drf-standardized-errors`
+`ExceptionFormatter` subclass, plus an `AutoSchema` subclass so the generated
+OpenAPI describes the enveloped body rather than the library's bare one.
+
+`REST_FRAMEWORK["EXCEPTION_HANDLER"]` must keep naming
+`drf_standardized_errors.handler.exception_handler` itself: its `AutoSchema`
+compares the view's handler against that function *by identity* and silently
+stops documenting error responses when they differ. Hook your own exceptions in
+via `DRF_STANDARDIZED_ERRORS["EXCEPTION_HANDLER_CLASS"]` instead — that is what
+`core.api.exceptions.ApiExceptionHandler` is for.
+
+On django-modern-rest the same shape comes from `error_model` and
+`format_error` on `ErrorEnvelopeMixin`. `error_model` is not just documentation
+— dmr validates real error responses against it at runtime, so the two must
+agree or a 401 silently becomes a 422. dmr's own JWT controllers hardcode a 401
+spec pointing at *their* error model, which is why the auth views override
+`responses`.
 
 ## Soft deletes and the user model
 

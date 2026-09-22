@@ -1,6 +1,8 @@
 import datetime as dt
+from http import HTTPStatus
 from typing import TypedDict
 
+from dmr import HeaderSpec, ResponseSpec
 from dmr.plugins.msgspec import MsgspecSerializer
 from dmr.security.jwt.views import (
     ObtainTokensPayload,
@@ -8,6 +10,33 @@ from dmr.security.jwt.views import (
     ObtainTokensSyncController,
     RefreshTokenSyncController,
     VerifyTokenSyncController,
+)
+
+from core.api.errors import ApiError
+from core.api.views import ErrorEnvelopeMixin
+
+#: dmr's JWT controllers hardcode ResponseSpec(ErrorModel, 401), and an
+#: explicit spec beats the one auth derives from error_model. Without this
+#: override the enveloped body fails response validation and the caller gets a
+#: 422 instead of a 401.
+UNAUTHORIZED = (
+    ResponseSpec(
+        ApiError,
+        status_code=HTTPStatus.UNAUTHORIZED,
+        description="Raised when auth was not successful",
+        headers={
+            # These endpoints issue credentials rather than requiring them, so
+            # there is no auth chain to build a challenge from and the header
+            # is absent in practice. Declared anyway: an undescribed header on
+            # a validated response is rejected, so this keeps adding auth later
+            # from turning every 401 into a 422.
+            "WWW-Authenticate": HeaderSpec(
+                description="Challenges that the client can use to authenticate this request",
+                required=False,
+                skip_validation=True,
+            ),
+        },
+    ),
 )
 
 
@@ -48,10 +77,12 @@ class TokenResponseMixin:
 
 
 class LoginAPIView(
+    ErrorEnvelopeMixin,
     TokenResponseMixin,
     ObtainTokensSyncController[MsgspecSerializer, LoginPayload, ObtainTokensResponse],
 ):
-    auth = ()
+    auth = None
+    responses = UNAUTHORIZED
 
     def convert_auth_payload(self, payload: LoginPayload) -> ObtainTokensPayload:
         return {
@@ -61,19 +92,22 @@ class LoginAPIView(
 
 
 class RefreshAPIView(
+    ErrorEnvelopeMixin,
     TokenResponseMixin,
     RefreshTokenSyncController[MsgspecSerializer, RefreshPayload, ObtainTokensResponse],
 ):
-    auth = ()
+    auth = None
+    responses = UNAUTHORIZED
 
     def convert_refresh_payload(self, payload: RefreshPayload) -> str:
         return payload["refresh_token"]
 
 
-class TokenVerifyAPIView(VerifyTokenSyncController[MsgspecSerializer, VerifyPayload]):
+class TokenVerifyAPIView(ErrorEnvelopeMixin, VerifyTokenSyncController[MsgspecSerializer, VerifyPayload]):
     """Returns 204 when the access token is valid, 401 otherwise."""
 
-    auth = ()
+    auth = None
+    responses = UNAUTHORIZED
 
     def convert_verify_payload(self, payload: VerifyPayload) -> str:
         return payload["access_token"]
