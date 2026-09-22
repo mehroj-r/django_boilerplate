@@ -106,6 +106,11 @@ def apply_full_file_replacements(patcher: FilePatcher) -> None:
     replace_file(patcher, "src/api/url_router.py", "api_url_router.py")
     # drf-spectacular is gone; use dmr's own schema views.
     replace_file(patcher, "src/config/urls/base.py", "config_urls_base.py")
+    # The shipped tests assert DRF's response envelope and import
+    # rest_framework, neither of which exists here.
+    replace_file(patcher, "src/tests/test_health.py", "tests_health.py")
+    replace_file(patcher, "src/tests/test_auth.py", "tests_auth.py")
+    replace_file(patcher, "src/tests/test_errors.py", "tests_errors.py")
 
 
 def apply_docs(patcher: FilePatcher) -> None:

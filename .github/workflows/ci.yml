@@ -61,7 +61,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DJANGO_SECRET_KEY: ci-secret-key-not-used-anywhere-real-0123456789
       POSTGRES_DB: ci
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -74,6 +73,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked
+
+      # Must be a real key: `check --deploy` rejects anything under 50 chars
+      # (security.W009), which is exactly the guard we want to keep.
+      - name: Generate a SECRET_KEY for this run
+        run: echo "DJANGO_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
       - name: Generate project
         run: |

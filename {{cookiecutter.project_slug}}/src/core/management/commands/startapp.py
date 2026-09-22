@@ -7,6 +7,9 @@ from django.core.management import BaseCommand, CommandError
 
 LOCAL_APPS_MARKER = "LOCAL_APPS = ["
 URLPATTERNS_MARKER = "urlpatterns = ["
+# Present in api/v<n>/urls.py only when the project uses django-modern-rest,
+# whose controllers are registered on a Router instead of a urlpatterns list.
+ROUTER_MARKER = "router.include("
 
 
 def camelize(app_name: str) -> str:
@@ -50,7 +53,7 @@ class Command(BaseCommand):
                 "__init__.py": "",
                 "serializers.py": "",
                 "views.py": "",
-                "urls.py": (f'app_name = "{app_name}"\n\nurlpatterns = []\n'),
+                "urls.py": self.build_app_urls(app_name),
             },
         )
         self.stdout.write(self.style.SUCCESS(f"Created API module: {api_root}"))
@@ -168,6 +171,53 @@ class Command(BaseCommand):
     def add_to_local_apps(self, settings_file: Path, app_name: str) -> None:
         self._insert_into_list(settings_file, LOCAL_APPS_MARKER, f'    "{app_name}",\n', app_name)
 
+    def uses_router(self) -> bool:
+        """True when this project routes through dmr.routing.Router."""
+        return ROUTER_MARKER in Path(settings.BASE_DIR).joinpath("api", "v1", "urls.py").read_text(encoding="utf-8")
+
+    def build_app_urls(self, app_name: str) -> str:
+        """urls.py for the new app, in whichever routing style the project uses."""
+        if self.uses_router():
+            return f'from dmr.routing import Router\n\napp_name = "{app_name}"\n\nrouter = Router("", [])\n'
+        return f'app_name = "{app_name}"\n\nurlpatterns = []\n'
+
     def add_to_api_urls(self, urls_file: Path, app_name: str, version: str) -> None:
+        if self.uses_router():
+            self._register_router(urls_file, app_name, version)
+            return
+
         entry = f'    path("{app_name}/", include("api.{version}.{app_name}.urls", namespace="{app_name}")),\n'
         self._insert_into_list(urls_file, URLPATTERNS_MARKER, entry, f"api.{version}.{app_name}.urls")
+
+    def _register_router(self, urls_file: Path, app_name: str, version: str) -> None:
+        """Add an import and a router.include() call to a dmr-style urls.py."""
+        if not urls_file.exists():
+            raise CommandError(f"File not found: {urls_file}")
+
+        content = urls_file.read_text(encoding="utf-8")
+        import_line = f"from api.{version}.{app_name} import urls as {app_name}_urls\n"
+        include_line = f'router.include({app_name}_urls.router, namespace="{app_name}")\n'
+
+        if include_line in content:
+            self.stdout.write(self.style.WARNING(f"api.{version}.{app_name}.urls already present in {urls_file.name}"))
+            return
+
+        lines = content.splitlines(keepends=True)
+
+        last_import = max(
+            (i for i, line in enumerate(lines) if line.startswith(f"from api.{version}")),
+            default=None,
+        )
+        last_include = max(
+            (i for i, line in enumerate(lines) if line.startswith(ROUTER_MARKER)),
+            default=None,
+        )
+        if last_import is None or last_include is None:
+            raise CommandError(f"Could not find the router block in {urls_file}")
+
+        # Insert the include first so the earlier import insert does not shift it.
+        lines.insert(last_include + 1, include_line)
+        lines.insert(last_import + 1, import_line)
+
+        urls_file.write_text("".join(lines), encoding="utf-8")
+        self.stdout.write(self.style.SUCCESS(f"Registered api.{version}.{app_name}.urls in {urls_file.name}"))

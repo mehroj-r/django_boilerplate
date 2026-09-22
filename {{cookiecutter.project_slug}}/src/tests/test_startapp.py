@@ -43,7 +43,8 @@ class StartAppCommandTests(SimpleTestCase):
 
         self.assertIn(f'"{self.app_name}",', self.settings_file.read_text())
         # Without this the generated urls.py is orphaned and never served.
-        self.assertIn(f'include("api.v1.{self.app_name}.urls"', self.urls_file.read_text())
+        # Matches both routing styles: DRF's include(...) and dmr's Router.
+        self.assertIn(f"api.v1.{self.app_name}", self.urls_file.read_text())
 
     def test_rejects_invalid_names(self):
         for bad in ("class", "Widget", "widget-shop", "account"):

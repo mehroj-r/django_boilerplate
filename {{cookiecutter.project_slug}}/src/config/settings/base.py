@@ -268,13 +268,16 @@ CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=csv_list)
 CORS_ALLOW_CREDENTIALS = config("CORS_ALLOW_CREDENTIALS", default=False, cast=bool)
 
 # --- Caching ----------------------------------------------------------------
-REDIS_URL = config("REDIS_URL", default="")
+# Deliberately NOT tied to REDIS_URL (the background-task broker). Throttling
+# reads the cache on every request, so a broker outage -- or simply running the
+# tests without Redis -- must not take the API down. Opt in explicitly.
+CACHE_URL = config("CACHE_URL", default="")
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,
+        "LOCATION": CACHE_URL,
     }
-    if REDIS_URL
+    if CACHE_URL
     else {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "{{ cookiecutter.project_slug }}",
