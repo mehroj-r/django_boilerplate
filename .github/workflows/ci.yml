@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [drf]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint the template repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: ruff
+        run: uv run ruff check .
+      - name: ruff format
+        run: uv run ruff format --check .
+
+  template-tests:
+    name: Generation matrix + patch engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest tests -q
+
+  generated-project:
+    name: "Generated project: ${{ matrix.api_framework }} / ${{ matrix.admin_ui }} / ${{ matrix.background_task }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { api_framework: drf, admin_ui: default, background_task: none }
+          - { api_framework: drf, admin_ui: django-unfold, background_task: celery }
+          - { api_framework: drf, admin_ui: default, background_task: django-q2 }
+          - { api_framework: django-modern-rest, admin_ui: default, background_task: none }
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SECRET_KEY: ci-secret-key-not-used-anywhere-real-0123456789
+      POSTGRES_DB: ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      - name: Generate project
+        run: |
+          uv run python scripts/generate-project.py ./build --no-input --force \
+            --context api_framework=${{ matrix.api_framework }} \
+            --context admin_ui=${{ matrix.admin_ui }} \
+            --context background_task=${{ matrix.background_task }}
+
+      - name: Install generated project
+        working-directory: ./build
+        run: uv sync --locked
+
+      - name: Django checks
+        working-directory: ./build
+        run: uv run src/manage.py check
+
+      - name: Deployment checklist
+        working-directory: ./build
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.prod
+          # Exercise the hardened path. The template ships safe defaults
+          # (HSTS off, preload off) so a first deploy cannot brick a domain;
+          # these values prove the settings are wired, not that you must use them.
+          SECURE_HSTS_SECONDS: "31536000"
+          SECURE_HSTS_PRELOAD: "True"
+        run: uv run src/manage.py check --deploy --fail-level WARNING
+
+      - name: No missing migrations
+        working-directory: ./build
+        run: uv run src/manage.py makemigrations --check --dry-run
+
+      - name: Test suite
+        working-directory: ./build
+        run: uv run pytest -q
+
+      - name: Lint generated project
+        working-directory: ./build
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+  docker-smoke:
+    name: docker compose up -> healthy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      - name: Generate project
+        run: uv run python scripts/generate-project.py ./build --no-input --force
+
+      # This is the check that catches the whole class of failure static review
+      # misses: a project that imports fine but cannot actually boot -- a
+      # missing uv.lock, an entrypoint that cannot import the apps package, a
+      # healthcheck pointed at a 404, or a static volume mounted on the wrong path.
+      - name: Bring the stack up
+        working-directory: ./build
+        run: |
+          cp .env.example .env
+          sed -i "s/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=$(openssl rand -hex 32)/" .env
+          docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Healthcheck responds
+        working-directory: ./build
+        run: |
+          source .env
+          curl -fsS "http://127.0.0.1:${APP_PORT:-8005}/api/v1/health/" | tee /dev/stderr | grep -q '"success":true'
+
+      - name: Web container is healthy, not restarting
+        working-directory: ./build
+        run: |
+          docker compose ps
+          test "$(docker compose ps --status running --services | grep -c web)" -eq 1
+
+      - name: Static files landed inside the mounted volume
+        working-directory: ./build
+        run: docker compose exec -T web sh -c 'test -d /cdn/static && test "$(find /cdn/static -type f | wc -l)" -gt 0'
+
+      - name: No import errors in the logs
+        working-directory: ./build
+        run: |
+          if docker compose logs web | grep -q "ModuleNotFoundError"; then
+            docker compose logs web
+            exit 1
+          fi
+
+      - name: Tear down
+        if: always()
+        working-directory: ./build
+        run: docker compose down -v

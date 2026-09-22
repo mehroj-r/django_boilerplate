@@ -7,13 +7,22 @@ requires-python = ">=3.13"
 dependencies = [
     "cookiecutter>=2.7.1",
     "jinja2-time>=0.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-xdist>=3.6.0",
     "ruff>=0.15.13",
+    "ty>=0.0.83",
 ]
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py313"
 line-length = 120
-extend-exclude = ["{{cookiecutter.project_slug}}", "{{ cookiecutter.project_slug }}"]
+# Brace characters are alternation syntax in ruff's glob matcher, so the
+# template directory has to be escaped with character classes to match.
+extend-exclude = ["[{][{]cookiecutter.project_slug[}][}]", "[{][{] cookiecutter.project_slug [}][}]"]
 force-exclude = true
 
 [tool.ruff.lint]
@@ -26,6 +35,17 @@ ignore = [
     "B024", # Abstract base class without abstract methods
     "B904", # raise ... from err
 ]
+
+[tool.ruff.lint.isort]
+# The hook snippets are source for the generated project, where account/api/
+# config/core are first-party. Mirror that here so a snippet is sorted the same
+# way in both places.
+known-first-party = ["account", "api", "config", "core", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["hooks"]
+filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ty.environment]
 extra-paths = ["hooks"]

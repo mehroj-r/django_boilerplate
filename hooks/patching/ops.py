@@ -210,7 +210,7 @@ class FilePatcher:
             return False
 
         updated = content
-        if not updated.endswith("\n"):
+        if updated and not updated.endswith("\n"):
             updated += "\n"
         updated += snippet
         if trailing_newline and not snippet.endswith("\n"):

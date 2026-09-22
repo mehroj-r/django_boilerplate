@@ -1,53 +1,111 @@
-# Cookiecutter Template
+# 🚀 Django Boilerplate
 
-## Generate A Project (directly into target root)
-
-Use the root script to render a project into a target directory without creating an extra nested
-`<project_slug>` folder:
+A cookiecutter template for production-ready Django REST APIs. Answer a few
+prompts and you get a project that builds, boots and passes its own test suite.
 
 ```bash
-./generate-project.sh ./my-new-api
+uvx cookiecutter gh:mehroj-r/django_boilerplate --checkout drf
+cd <your_project_slug>
+just up && just health
 ```
 
-Equivalent Python entrypoint:
+---
+
+## What you choose
+
+| Prompt | Options |
+|---|---|
+| `api_framework` | `drf` (Django REST Framework + SimpleJWT), `django-modern-rest` (typed controllers, msgspec) |
+| `admin_ui` | `default`, `django-unfold` |
+| `background_task` | `none`, `celery`, `django-q2` |
+| `open_source_license` | `None`, `MIT`, `Apache-2.0`, `GPL-3.0` |
+
+Every combination is exercised in CI: generated, installed, checked, tested and
+linted. The default combination additionally gets a `docker compose up` smoke
+test that curls the healthcheck.
+
+## What you get
+
+- Layered `src/{api,apps,config,core}` with versioned API routing
+- Custom `User` model, JWT auth with rotating + blacklisted refresh tokens
+- Consistent `{success, message, data}` response envelope
+- Soft deletes with matching admin actions
+- OpenAPI schema + Swagger UI + Redoc
+- Multi-stage Dockerfile, separate dev/prod compose stacks, health-gated startup
+- `pytest` suite, `ruff` config, `Justfile`, GitHub Actions deploy workflows
+- `just startapp <name>` — scaffolds the app *and* routes its URLs
+
+---
+
+## Repository layout
+
+This repo is the template itself, on the `drf` branch.
+
+```
+cookiecutter.json              # the prompts
+hooks/
+├── pre_gen_project.py         # validates the slug before anything is written
+├── post_gen_project.py        # applies option patches, seeds .env, runs `uv lock`
+├── patching/                  # the patch engine (ordering, ops, dependency edits)
+├── admin_ui/ api_framework/ background_task/
+│                              # one package per option: patches.py + snippets/
+└── ...
+{{cookiecutter.project_slug}}/ # the project that gets rendered
+scripts/generate-project.py    # render into a directory root (no nested folder)
+tests/                         # the template's own test suite
+```
+
+### How options are applied
+
+The rendered project is the `drf` + `default` + `none` combination. Anything
+else is applied afterwards by `post_gen_project.py` as an ordered set of
+`PatchSpec`s: each declares an id, a priority, optional `after` dependencies and
+optional `conflicts`. `hooks/patching/engine.py` topologically sorts them;
+`ops.py` performs anchored edits that are idempotent via a `marker`.
+
+Dependency edits go through `hooks/patching/deps.py`, which matches on the
+package name and inserts against a marker comment — so bumping a version in
+`{{cookiecutter.project_slug}}/pyproject.toml` cannot break generation.
+
+---
+
+## Working on the template
 
 ```bash
-./generate-project.py ./my-new-api
+uv sync
+just test-template   # patch engine + generation matrix
+just test            # generate into ./build and run that project's tests
+just lint            # ruff + ty
+just clean
 ```
 
-### Non-interactive example
+Generating a project runs `uv lock` in it, so `uv` must be installed.
 
-```bash
-./generate-project.py ./my-new-api \
-  --no-input \
-  --context project_name="My New API" \
-  --context project_slug="my_new_api" \
-  --context github_username="my-org"
-```
+### Adding an option
 
-### Useful flags
+1. Add the choice to `cookiecutter.json`.
+2. Create `hooks/<group>/<option>/` with `patches.py` (exposing `get_patches()`)
+   and a `snippets/` directory.
+3. Wire it into `collect_patches()` in `hooks/post_gen_project.py`.
+4. Add a case to `TestOptionMatrix` in `tests/test_generate.py` and to the CI
+   matrix in `.github/workflows/ci.yml`.
 
-- `--force`: allow generation into a non-empty target directory (merge/overwrite)
-- `--template`: use a different template path (defaults to this repository)
-- `--context KEY=VALUE`: override cookiecutter context values (can be repeated)
+Anchor patches on marker comments or package names, never on a pinned version
+string — that is what made earlier versions of this template break on a routine
+dependency bump.
 
-## Raw Cookiecutter (default nested output)
+---
 
-If you want plain cookiecutter behavior (creates `<output>/<project_slug>`):
+## Branches
 
-```bash
-cookiecutter .
-cookiecutter . -o ./cookiecutter-output
-```
+| Branch | Contents |
+|---|---|
+| `drf` | The maintained template. Start here. |
+| `drf_aiogram` | Older variant bundling an aiogram Telegram bot. Unmaintained. |
+| `master` | This README only. |
 
-## Key prompts
+---
 
-- `project_name`
-- `project_slug`
-- `distribution_name`
-- `docker_name_prefix`
-- `github_username`
-- `admin_ui` (`default` or `django-unfold`)
-- `api_framework` (`drf` or `django-modern-rest`)
+## License
 
-Note: generated projects do not include `uv.lock` from the template; it is created after first `uv sync`.
+MIT. Generated projects get the license you select at prompt time.

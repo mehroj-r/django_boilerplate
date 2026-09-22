@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from patching.deps import add_dependencies
 from patching.engine import PatchSpec
 from patching.ops import FilePatcher
 
@@ -12,23 +13,14 @@ def read_snippet(filename: str) -> str:
 
 
 def apply_dependencies(patcher: FilePatcher) -> None:
-    patcher.ensure_insert_after(
-        "pyproject.toml",
-        '    "uvicorn>=0.37.0",\n',
-        '    "celery>=5.4.0",\n    "redis>=5.2.1",\n',
-        marker='    "celery>=5.4.0",',
-    )
+    add_dependencies(patcher, "celery>=5.4.0", "redis>=5.2.1")
 
 
 def apply_settings(patcher: FilePatcher) -> None:
-    celery_settings = read_snippet("celery_settings.txt")
-
-    patcher.ensure_insert_before(
-        "src/config/settings/base.py",
-        'CORS_URLS_REGEX = r"^/api/.*$"\n',
-        f"{celery_settings}\n\n",
-        marker="CELERY_BROKER_URL",
-    )
+    # Appended rather than inserted mid-file so REDIS_URL (defined in the
+    # caching block) is already in scope.
+    patcher.ensure_contains("src/config/settings/base.py", read_snippet("celery_settings.txt"))
+    patcher.ensure_contains(".env.example", read_snippet("celery_env.txt"))
 
 
 def apply_docker(patcher: FilePatcher, docker_prefix: str) -> None:
@@ -40,14 +32,14 @@ def apply_docker(patcher: FilePatcher, docker_prefix: str) -> None:
     patcher.ensure_insert_before(
         "docker-compose.yml",
         "  web:\n",
-        f"{celery_docker}\n",
+        f"{celery_docker}\n\n",
         marker=f'    container_name: "{docker_prefix}-redis-dev"',
     )
 
     patcher.ensure_insert_before(
         "docker-compose.prod.yml",
         "  web:\n",
-        f"{celery_docker_prod}\n",
+        f"{celery_docker_prod}\n\n",
         marker=f'    container_name: "{docker_prefix}-redis-prod"',
     )
 
@@ -70,7 +62,8 @@ def apply_files(patcher: FilePatcher, project_slug: str) -> None:
     celery_app = read_snippet("celery_app.txt").replace("{{ cookiecutter.project_slug }}", project_slug)
     celery_init = read_snippet("celery_init.txt")
 
-    patcher.create_file("src/core/celery.py", celery_app)
+    # read_snippet strips the trailing newline; files on disk need one back.
+    patcher.create_file("src/core/celery.py", f"{celery_app}\n")
     patcher.ensure_contains("src/core/__init__.py", celery_init)
 
 

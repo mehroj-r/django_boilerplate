@@ -8,31 +8,63 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "cffi>=1.17.1",
     "colorlog>=6.10.1",
     "dj-database-url>=3.0.1",
-    "django>=5.2.4",
-    "django-soft-delete>=1.0.23",
+    "django>=6.1,<7.0",
     "django-cors-headers>=4.9.0",
     "django-filter>=25.1",
-    "whitenoise>=6.11.0",
+    "django-soft-delete>=1.0.23",
     "djangorestframework>=3.16.0",
     "djangorestframework-simplejwt[crypto]>=5.5.1",
-    "markdown>=3.8.2",
-    "psycopg2-binary>=2.9.10",
-    "pycparser>=2.22",
-    "pygments>=2.19.2",
+    "drf-spectacular>=0.28.0",
+    "psycopg[binary]>=3.2.0",
     "python-decouple>=3.8",
-    "requests>=2.32.5",
     "sentry-sdk>=2.34.1",
-    "sqlparse>=0.5.3",
     "uvicorn>=0.37.0",
+    "whitenoise>=6.11.0",
+    # >>> optional dependencies are inserted above this marker by the template
 ]
 
 [dependency-groups]
 dev = [
-    "black>=25.9.0",
     "django-debug-toolbar>=6.0.0",
     "django-extensions>=4.1",
     "django-query-counter>=0.4.1",
+    "factory-boy>=3.3.1",
+    "pytest>=8.3.0",
+    "pytest-django>=4.9.0",
+    "ruff>=0.15.13",
+    # >>> optional dev dependencies are inserted above this marker by the template
 ]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py", "tests.py"]
+pythonpath = ["src", "src/apps"]
+testpaths = ["src"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+# Migrations are generated; Markdown is prose (ruff formats fenced python).
+extend-exclude = ["**/migrations", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "DJ", "S"]
+ignore = [
+    "E501", # Line too long (formatter handles it)
+    "DJ001", # Avoid null=True on string-based fields
+    "S101", # assert (used by tests)
+]
+
+[tool.ruff.lint.isort]
+# Without this, ruff cannot tell the project's own packages from third-party
+# ones (they are imported by bare label, not as apps.account).
+known-first-party = ["account", "api", "config", "core", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# Star-imports are the settings/urls idiom.
+"src/config/settings/*.py" = ["F403", "F405"]
+"src/config/urls/__init__.py" = ["F403"]
+# Test fixtures use obvious literal credentials on purpose.
+"src/tests/*" = ["S105", "S106"]

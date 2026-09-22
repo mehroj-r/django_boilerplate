@@ -15,32 +15,42 @@ class BaseModelAdmin(ModelAdmin):
 
 
 class BaseSoftDeleteModelAdmin(BaseModelAdmin):
+    """Admin for SoftDeleteModel subclasses.
+
+    Shows deleted rows alongside live ones and swaps Django's delete action for
+    soft-delete / restore / hard-delete, chosen by the current filter.
+    """
+
     def get_queryset(self, request) -> Any:
-        return self.model.global_objects.get_queryset()
+        # Mirrors ModelAdmin.get_queryset but reads through global_objects so
+        # soft-deleted rows stay visible in the changelist.
+        queryset = self.model.global_objects.get_queryset()
+        ordering = self.get_ordering(request)
+        if ordering:
+            queryset = queryset.order_by(*ordering)
+        return queryset
 
     def get_list_filter(self, request) -> Any:
-        list_filter = super().get_list_filter(request) or []
-        if not isinstance(list_filter, list):
-            list_filter = list(list_filter)
-        list_filter.append(SoftDeleteFilter)
+        list_filter = list(super().get_list_filter(request) or [])
+        if SoftDeleteFilter not in list_filter:
+            list_filter.append(SoftDeleteFilter)
         return list_filter
 
     def get_actions(self, request) -> Any:
         actions = super().get_actions(request)
         actions.pop(REGULAR_DELETE_ACTION_NAME, None)
 
-        deleted_filter_value = {
-            "true": True,
-            "false": False,
-            "all": "ALL",
-        }[request.GET.get("is_deleted") or "all"]
+        # SoftDeleteFilter only ever sets "true" or "false"; anything else (an
+        # absent filter, or a hand-typed query string) means "show everything".
+        # A dict lookup here would raise KeyError and 500 the changelist.
+        deleted_filter_value = request.GET.get(SoftDeleteFilter.parameter_name)
 
-        if deleted_filter_value is True:
+        if deleted_filter_value == "true":
             actions.update(RESTORE_ACTION)
             actions.update(HARD_DELETE_ACTION)
-        elif deleted_filter_value is False or deleted_filter_value is None:
+        elif deleted_filter_value == "false":
             actions.update(SOFT_DELETE_ACTION)
-        elif deleted_filter_value == "ALL":
+        else:
             actions.update(SOFT_DELETE_ACTION)
             actions.update(RESTORE_ACTION)
             actions.update(HARD_DELETE_ACTION)

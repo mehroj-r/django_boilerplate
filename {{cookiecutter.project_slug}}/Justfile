@@ -1,49 +1,72 @@
 set dotenv-load := true
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
+HEALTH_PATH := "/api/v1/health/"
+
 default:
     @just --list
 
 help:
     @just --list
 
-# Local development
+# --- Local development ------------------------------------------------------
+
 install:
     uv sync
 
+# Regenerate uv.lock (the Dockerfile builds with `uv sync --locked`)
+lock:
+    uv lock
+
+# Print a fresh Django SECRET_KEY
+secret:
+    @uv run python -c "from django.core.management.utils import get_random_secret_key as k; print(k())"
+
 run host="127.0.0.1" port="8000":
-    python src/manage.py runserver {{host}}:{{port}}
+    uv run src/manage.py runserver {{host}}:{{port}}
 
 migrate:
-    python src/manage.py migrate
+    uv run src/manage.py migrate
 
 makemigrations app="":
-    if [ -n "{{app}}" ]; then python src/manage.py makemigrations "{{app}}"; else python src/manage.py makemigrations; fi
+    if [ -n "{{app}}" ]; then uv run src/manage.py makemigrations "{{app}}"; else uv run src/manage.py makemigrations; fi
+
+# Fail if a model change has no matching migration
+check-migrations:
+    uv run src/manage.py makemigrations --check --dry-run
 
 collectstatic:
-    python src/manage.py collectstatic --noinput
+    uv run src/manage.py collectstatic --noinput
 
 superuser:
-    python src/manage.py createsuperuser
+    uv run src/manage.py createsuperuser
 
 shell:
-    python src/manage.py shell
+    uv run src/manage.py shell
 
 test:
-    python src/manage.py test
+    uv run pytest
 
+# Django system checks, including the production deployment checklist
 check:
-    python src/manage.py check
-    python src/manage.py test
+    uv run src/manage.py check
+    DJANGO_SETTINGS_MODULE=config.settings.prod uv run src/manage.py check --deploy
+
+lint:
+    uv run ruff check .
+
+format:
+    uv run ruff format .
 
 startapp name ver="v1":
-    python src/manage.py startapp {{name}} --ver {{ver}}
+    uv run src/manage.py startapp {{name}} --ver {{ver}}
 
 health-local port="8000":
-    curl -fsS "http://127.0.0.1:{{port}}/api/v1/health/" > /dev/null
+    curl -fsS "http://127.0.0.1:{{port}}{{HEALTH_PATH}}" > /dev/null
     @echo "Healthcheck passed on :{{port}}"
 
-# Docker development
+# --- Docker development -----------------------------------------------------
+
 up:
     docker compose up --build -d
 
@@ -58,10 +81,11 @@ logs service="web":
     docker compose logs -f {{service}}
 
 health:
-    curl -fsS "http://127.0.0.1:${APP_PORT:-8005}/api/v1/health/" > /dev/null
+    curl -fsS "http://127.0.0.1:${APP_PORT:-8005}{{HEALTH_PATH}}" > /dev/null
     @echo "Healthcheck passed on :${APP_PORT:-8005}"
 
-# Docker production profile
+# --- Docker production profile ----------------------------------------------
+
 up-prod:
     docker compose -f docker-compose.prod.yml up --build -d
 

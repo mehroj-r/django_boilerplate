@@ -4,7 +4,12 @@ on:
   push:
     branches: [production]
   repository_dispatch:
-    types: [ trigger-deploy ]
+    types: [trigger-deploy]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
@@ -15,6 +20,7 @@ jobs:
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
       LOCATION: ${{ secrets.LOCATION }}
+      APP_PORT: ${{ secrets.APP_PORT || '8005' }}
 
     steps:
       - name: Checkout repository
@@ -25,13 +31,15 @@ jobs:
 
       - name: Build and save Docker image
         run: |
-          docker build -t $CONTAINER_NAME:latest .
-          docker save $CONTAINER_NAME:latest | gzip > $CONTAINER_NAME.tar.gz
+          set -euo pipefail
+          docker build -t "$CONTAINER_NAME:latest" .
+          docker save "$CONTAINER_NAME:latest" | gzip > "$CONTAINER_NAME.tar.gz"
 
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -39,15 +47,21 @@ jobs:
 
       - name: Copy image to server
         run: |
-          scp $CONTAINER_NAME.tar.gz \
-            $SSH_USER@$SSH_HOST:$LOCATION/images/
+          set -euo pipefail
+          ssh "$SSH_USER@$SSH_HOST" "mkdir -p '$LOCATION/images'"
+          scp "$CONTAINER_NAME.tar.gz" "$SSH_USER@$SSH_HOST:$LOCATION/images/"
 
       - name: Deploy on server
         run: |
-          ssh $SSH_USER@$SSH_HOST << EOF
-            docker load -i $LOCATION/images/$CONTAINER_NAME.tar.gz
-            docker stop $CONTAINER_NAME || true
-            docker rm $CONTAINER_NAME || true
-            cd $LOCATION
-            docker compose up -d
-          EOF
+          set -euo pipefail
+          # Built as a local string (not a heredoc): a heredoc terminator cannot
+          # sit at column 0 inside a YAML block scalar.
+          REMOTE_SCRIPT="set -euo pipefail
+          docker load -i '$LOCATION/images/$CONTAINER_NAME.tar.gz'
+          cd '$LOCATION'
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 300
+          curl -fsS --retry 5 --retry-delay 5 'http://127.0.0.1:$APP_PORT/api/v1/health/' > /dev/null
+          echo 'Deploy OK'
+          rm -f '$LOCATION/images/$CONTAINER_NAME.tar.gz'
+          docker image prune -f"
+          ssh "$SSH_USER@$SSH_HOST" "$REMOTE_SCRIPT"

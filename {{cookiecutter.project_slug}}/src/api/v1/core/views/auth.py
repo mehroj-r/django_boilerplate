@@ -1,10 +1,11 @@
-from core.api.views import BaseAPIView
 from rest_framework_simplejwt.serializers import TokenVerifySerializer
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
     TokenVerifyView,
 )
+
+from core.api.views import BaseAPIView
 
 
 class LoginAPIView(TokenObtainPairView, BaseAPIView):

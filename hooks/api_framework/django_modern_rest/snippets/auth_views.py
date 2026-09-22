@@ -1,45 +1,79 @@
-import jwt
-from json import JSONDecodeError, loads
+import datetime as dt
+from typing import TypedDict
 
-from django.conf import settings
-from django.http import JsonResponse
-from django.utils.decorators import method_decorator
-from django.views import View
-from django.views.decorators.csrf import csrf_exempt
-from dmr.security.jwt.views import ObtainTokensSyncController, RefreshTokenSyncController
+from dmr.plugins.msgspec import MsgspecSerializer
+from dmr.security.jwt.views import (
+    ObtainTokensPayload,
+    ObtainTokensResponse,
+    ObtainTokensSyncController,
+    RefreshTokenSyncController,
+    VerifyTokenSyncController,
+)
 
 
-class LoginAPIView(ObtainTokensSyncController):
-    def convert_auth_payload(self, request):
+class LoginPayload(TypedDict):
+    """Request body for POST /api/v1/auth/login/."""
+
+    username: str
+    password: str
+
+
+class RefreshPayload(TypedDict):
+    """Request body for POST /api/v1/auth/refresh/."""
+
+    refresh_token: str
+
+
+class VerifyPayload(TypedDict):
+    """Request body for POST /api/v1/auth/verify/."""
+
+    access_token: str
+
+
+class TokenResponseMixin:
+    """Builds the access/refresh pair returned by login and refresh."""
+
+    def make_api_response(self) -> ObtainTokensResponse:
+        now = dt.datetime.now(dt.UTC)
         return {
-            "username": request.data.get("username"),
-            "password": request.data.get("password"),
+            "access_token": self.create_jwt_token(
+                token_type="access",  # noqa: S106  (JWT claim, not a password)
+                expiration=now + self.jwt_expiration,
+            ),
+            "refresh_token": self.create_jwt_token(
+                token_type="refresh",  # noqa: S106  (JWT claim, not a password)
+                expiration=now + self.jwt_refresh_expiration,
+            ),
         }
 
 
-class RefreshAPIView(RefreshTokenSyncController):
-    def convert_refresh_payload(self, request):
-        return request.data.get("refresh") or request.data.get("refresh_token")
+class LoginAPIView(
+    TokenResponseMixin,
+    ObtainTokensSyncController[MsgspecSerializer, LoginPayload, ObtainTokensResponse],
+):
+    auth = ()
+
+    def convert_auth_payload(self, payload: LoginPayload) -> ObtainTokensPayload:
+        return {
+            "username": payload["username"],
+            "password": payload["password"],
+        }
 
 
-@method_decorator(csrf_exempt, name="dispatch")
-class TokenVerifyAPIView(View):
-    def post(self, request, *args, **kwargs):
-        token = None
-        try:
-            payload = loads((request.body or b"{}").decode("utf-8"))
-        except (UnicodeDecodeError, JSONDecodeError):
-            payload = {}
+class RefreshAPIView(
+    TokenResponseMixin,
+    RefreshTokenSyncController[MsgspecSerializer, RefreshPayload, ObtainTokensResponse],
+):
+    auth = ()
 
-        if isinstance(payload, dict):
-            token = payload.get("token")
+    def convert_refresh_payload(self, payload: RefreshPayload) -> str:
+        return payload["refresh_token"]
 
-        if token is None:
-            return JsonResponse({"detail": "Token is invalid"}, status=400)
 
-        try:
-            jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-        except jwt.InvalidTokenError:
-            return JsonResponse({"detail": "Token is invalid"}, status=400)
+class TokenVerifyAPIView(VerifyTokenSyncController[MsgspecSerializer, VerifyPayload]):
+    """Returns 204 when the access token is valid, 401 otherwise."""
 
-        return JsonResponse({"detail": "Token is valid"}, status=200)
+    auth = ()
+
+    def convert_verify_payload(self, payload: VerifyPayload) -> str:
+        return payload["access_token"]

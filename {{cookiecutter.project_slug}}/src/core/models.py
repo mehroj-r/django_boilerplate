@@ -28,7 +28,6 @@ class SoftDeleteModel(DjangoSoftDeleteModel, BaseModel):
     objects = SoftDeleteManager()
     deleted_objects = DeletedManager()
     global_objects = GlobalManager()
-    all_objects = GlobalManager()
 
     class Meta:
         abstract = True

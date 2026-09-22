@@ -2,20 +2,35 @@
     container_name: "{{ cookiecutter.docker_name_prefix }}-redis-dev"
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      retries: 5
     restart: unless-stopped
 
   celery_worker:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "true"
     container_name: "{{ cookiecutter.docker_name_prefix }}-celery-worker-dev"
-    command: celery -A core worker --loglevel=info
+    # Bypass the web entrypoint: workers must not run migrations or
+    # collectstatic -- those belong to the web service.
+    entrypoint: []
+    command: [ "celery", "-A", "core", "worker", "--loglevel=info" ]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      CDN_ROOT: /cdn
     volumes:
-      - app_data:/app/cdn
+      - app_data:/cdn
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     env_file:
       - .env

@@ -1,27 +1,21 @@
-from datetime import timedelta
+from .base import *  # noqa: F403
 
-from .base import *
+# Local development conveniences. Anything that must also hold when DEBUG is
+# off (JWT lifetimes, CORS) lives in base.py -- only genuine debug-only tooling
+# is gated below.
 
-if DEBUG:
-    INSTALLED_APPS += [
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True, cast=bool)  # noqa: F405
+
+if DEBUG:  # noqa: F405
+    INSTALLED_APPS += [  # noqa: F405
         "debug_toolbar",
         "django_extensions",
         "query_counter",
     ]
 
-    MIDDLEWARE += [
+    MIDDLEWARE += [  # noqa: F405
         "debug_toolbar.middleware.DebugToolbarMiddleware",
         "query_counter.middleware.DjangoQueryCounterMiddleware",
     ]
 
     INTERNAL_IPS = ["127.0.0.1"]
-
-    SIMPLE_JWT = {
-        "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-        "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-        "ROTATE_REFRESH_TOKENS": True,
-        "BLACKLIST_AFTER_ROTATION": True,
-        "AUTH_HEADER_TYPES": ("Bearer",),
-    }
-
-    CORS_ALLOW_ALL_ORIGINS = True

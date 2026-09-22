@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import secrets
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +26,59 @@ TEMPLATE_REF = "{{ cookiecutter._template }}"
 def remove_license_if_none() -> None:
     if OPEN_SOURCE_LICENSE == "None":
         Path("LICENSE").unlink(missing_ok=True)
+
+
+def generate_secret_key() -> str:
+    """Generate a SECRET_KEY that is safe to store in a .env file.
+
+    Django's own get_random_secret_key() can emit `$`, which docker compose
+    treats as variable interpolation when it reads .env -- the key would be
+    silently truncated. A URL-safe token avoids every character with meaning
+    to compose, dotenv or a shell, at equal entropy.
+    """
+    return secrets.token_urlsafe(64)
+
+
+def write_env_file() -> None:
+    """Seed .env from .env.example with a unique SECRET_KEY.
+
+    settings.base requires DJANGO_SECRET_KEY with no fallback, so a generated
+    project would otherwise refuse to start until someone invents one -- and
+    the old default ("django-insecure-change-me") silently shipped to
+    production when they did not.
+    """
+    example = Path(".env.example")
+    target = Path(".env")
+    if not example.exists() or target.exists():
+        return
+
+    content = example.read_text(encoding="utf-8").replace(
+        "DJANGO_SECRET_KEY=change-me-run-just-secret",
+        f"DJANGO_SECRET_KEY={generate_secret_key()}",
+    )
+    target.write_text(content, encoding="utf-8")
+    print("Created .env with a freshly generated DJANGO_SECRET_KEY.")
+
+
+def write_lock_file() -> None:
+    """Resolve uv.lock so `docker build` (which runs `uv sync --locked`) works.
+
+    The lock cannot be committed in the template itself: the unrendered
+    pyproject.toml has a Jinja placeholder for its project name.
+    """
+    if Path("uv.lock").exists():
+        return
+    if shutil.which("uv") is None:
+        print("WARNING: uv not found; run `uv lock` before `docker build` (the Dockerfile needs uv.lock).")
+        return
+
+    try:
+        subprocess.run(["uv", "lock"], check=True, capture_output=True, text=True, timeout=300)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        detail = getattr(exc, "stderr", "") or exc
+        print(f"WARNING: `uv lock` failed, run it manually before `docker build`:\n{detail}")
+    else:
+        print("Generated uv.lock.")
 
 
 def resolve_repo_dir() -> Path:
@@ -94,14 +150,17 @@ def main() -> int:
     remove_license_if_none()
 
     patches = collect_patches()
-    if not patches:
-        return 0
+    if patches:
+        from patching.engine import PatchEngine
 
-    from patching.engine import PatchEngine
+        engine = PatchEngine(Path.cwd())
+        applied = engine.run(patches)
+        print(f"Applied hook patches: {', '.join(applied)}")
 
-    engine = PatchEngine(Path.cwd())
-    applied = engine.run(patches)
-    print(f"Applied hook patches: {', '.join(applied)}")
+    # Must run after the patches: they add dependencies to pyproject.toml and
+    # extra variables to .env.example.
+    write_env_file()
+    write_lock_file()
     return 0
 
 

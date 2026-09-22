@@ -1,0 +1,7 @@
+
+# ---------------------------------------------------------------------------
+# Background tasks (Django-Q2)
+# ---------------------------------------------------------------------------
+# `redis` is the compose service name; use localhost when running bare-metal.
+REDIS_URL=redis://redis:6379/0
+REDIS_PORT=6379

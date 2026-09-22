@@ -3,6 +3,10 @@
     image: redis:7-alpine
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      retries: 5
     networks:
       - network-default
     restart: unless-stopped
@@ -10,12 +14,20 @@
   qcluster:
     build: .
     container_name: "{{ cookiecutter.docker_name_prefix }}-qcluster-prod"
-    command: python manage.py qcluster
+    # Bypass the web entrypoint: workers must not run migrations or
+    # collectstatic -- those belong to the web service.
+    entrypoint: []
+    command: [ "python", "manage.py", "qcluster" ]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      CDN_ROOT: /cdn
     volumes:
-      - app_data:/app/cdn
+      - app_data:/cdn
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - network-default
     restart: unless-stopped

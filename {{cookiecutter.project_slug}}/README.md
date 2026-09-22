@@ -1,169 +1,213 @@
 # {{ cookiecutter.project_name }}
 
-A production-ready, scalable Django REST API template for rapid backend development. This template features modular app structure, JWT authentication, Docker support, environment-based settings, and best practices for both development and deployment.
+A production-ready Django REST API: layered project structure, JWT auth, soft
+deletes, OpenAPI docs, Docker for dev and prod, and a test suite that runs from
+the first commit.
 
 ---
 
-## 📦 Project Structure
+## Quickstart
+
+```bash
+cp .env.example .env          # already created for you, with a unique SECRET_KEY
+just up                       # build + start Postgres and the API
+just health                   # -> Healthcheck passed on :8005
+```
+
+| What | Where |
+|---|---|
+| API root | http://localhost:8005/api/v1/ |
+| Health probe | http://localhost:8005/api/v1/health/ |
+| Swagger UI | http://localhost:8005/api/schema/swagger-ui/ |
+| Redoc | http://localhost:8005/api/schema/redoc/ |
+| Admin | http://localhost:8005/admin/ |
+
+Create an admin user with `docker compose exec web python manage.py createsuperuser`.
+
+### Without Docker
+
+```bash
+uv sync
+# point POSTGRES_HOST at a reachable Postgres (`localhost` if you run one yourself)
+just migrate
+just superuser
+just run
+```
+
+`just` loads `.env` automatically. Run `just` with no arguments to list every recipe.
+
+---
+
+## Project structure
 
 ```
 {{ cookiecutter.project_slug }}/
-├── docker-compose.yml / docker-compose.prod.yml   # Docker orchestration (dev/prod)
-├── Dockerfile                                     # App Dockerfile
-├── scripts/                                       # Utility scripts
-│   ├── backup.sh
-│   └── entrypoint.sh
-├── src/
-│   ├── manage.py
-│   ├── apps/                                      # Modular Django apps
-│   │   ├── account/                               # User/account management
-│   │   │   ├── admin/ api/ migrations/ ...
-│   │   ├── core/                                  # Core business logic
-│   │   │   ├── admin/ api/ migrations/ ...
-│   │   ├── url_router.py                          # App URL router
-│   ├── config/                                    # Django project config
-│   │   ├── server/                                # ASGI/WGI entrypoints
-│   │   ├── settings/                              # base.py, dev.py, prod.py
-│   │   ├── urls/                                  # URL configs
-│   │   └── ...
-├── pyproject.toml                                 # Python dependencies
-├── logs/                                          # Log files
-└── README.md
+├── Dockerfile                    # multi-stage; INSTALL_DEV=true adds dev deps
+├── docker-compose.yml            # dev stack   (project name: <slug>-dev)
+├── docker-compose.prod.yml       # prod stack  (project name: <slug>-prod)
+├── Justfile                      # every task you need; `just` to list them
+├── pyproject.toml / uv.lock      # dependencies, locked
+├── docs/                         # deployment and how-to notes
+└── src/
+    ├── manage.py
+    ├── api/                      # HTTP layer only: urls, views, serializers
+    │   ├── url_router.py         # mounts /api/v1/, add /api/v2/ here
+    │   └── v1/
+    │       ├── urls.py           # version root; startapp registers apps here
+    │       ├── account/          # per-app API modules
+    │       └── core/             # auth + health/test endpoints
+    ├── apps/                     # Django apps: models, admin, migrations
+    │   └── account/              # the custom User model
+    ├── config/
+    │   ├── bootstrap.py          # puts src/apps on sys.path (see below)
+    │   ├── server/               # asgi.py / wsgi.py
+    │   ├── settings/             # base.py -> dev.py / prod.py
+    │   └── urls/
+    ├── core/                     # shared building blocks (see below)
+    ├── scripts/                  # entrypoint.sh, healthcheck.sh
+    └── tests/
 ```
+
+Apps are imported by their bare label (`"account"`, not `"apps.account"`), so
+`src/apps` has to be on `sys.path` before `django.setup()`. That is what
+`config/bootstrap.py` does, and **every** entrypoint — `manage.py`, `asgi.py`
+and `wsgi.py` — calls it. If you add another entrypoint, call it there too.
 
 ---
 
-## 🚀 Features
+## What `core/` gives you
 
-- **Modular App Structure**: Easily extend with new Django apps under `src/apps/`.
-- **JWT Authentication**: Secure endpoints using `rest_framework_simplejwt`.
-- **Environment-based Settings**: Separate configs for development and production.
-- **Dockerized**: Ready-to-use Docker and Nginx setup for local and cloud deployment.
-- **Admin Panel**: Django admin enabled for all registered models.
-- **API Versioning**: Organize endpoints under `/api/v1/` and beyond.
-- **Utility Scripts**: Backup, entrypoint, and other scripts for automation.
+| Module | Use it for |
+|---|---|
+| `core.api.views` | `ListAPIView`, `CreateAPIView`, … — same as DRF's, plus the response envelope |
+| `core.api.exceptions` | `api_exception_handler`, wired into `REST_FRAMEWORK["EXCEPTION_HANDLER"]` |
+| `core.models` | `TimestampedModel`, `SoftDeleteModel`, `BaseModel` |
+| `core.admin` | `BaseModelAdmin`, `BaseSoftDeleteModelAdmin` |
+| `core.utils.pagination` | `CustomPagination` (`?page=`, `?per_page=`) |
+| `core.utils.logging` | console formatter + optional Telegram error alerts |
+
+### Response envelope
+
+Every response is wrapped, so clients parse one shape:
+
+```jsonc
+// success
+{ "success": true,  "message": "OK",  "data": { } }
+// error
+{ "success": false, "message": "email: This field is required.", "error": "invalid" }
+// list (paginated)
+{ "success": true, "message": "OK", "results": [], "total_count": 0,
+  "page": 1, "page_count": 1, "per_page": 10 }
+```
+
+### Soft deletes
+
+Models inheriting `core.models.SoftDeleteModel` get three managers:
+
+```python
+MyModel.objects          # alive rows only (default manager)
+MyModel.deleted_objects  # soft-deleted rows only
+MyModel.global_objects   # everything
+```
+
+`instance.delete()` soft-deletes; `instance.restore()` brings it back. Register
+such models with `BaseSoftDeleteModelAdmin` to get restore/hard-delete actions.
 
 ---
 
-## ⚙️ Quickstart
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/{{ cookiecutter.github_username }}/{{ cookiecutter.project_slug }}
-cd {{ cookiecutter.project_slug }}
-```
-
-### 2. Local Development (with uv)
-```bash
-uv sync
-cd src
-python manage.py migrate
-python manage.py createsuperuser  # optional
-python manage.py runserver
-```
-
-`uv.lock` is intentionally not committed in this template. It is generated locally on the first `uv sync`.
-
-### 3. Dockerized Development
-```bash
-docker-compose up --build
-```
-- App: http://localhost:8000
-- Admin: http://localhost:8000/admin/
-
-### 4. Production Deployment
-- Edit environment variables and secrets as needed.
-- Use `docker-compose.prod.yml` and production settings:
-```bash
-docker-compose -f docker-compose.prod.yml up --build
-```
-
-### 5. Command Manager (Justfile)
-Use `just` from the project root to run common actions:
+## Adding an app
 
 ```bash
-just help
-just install
-just run
-just migrate
-just test
-just up
-just down
-just health
-just startapp my_app
+just startapp orders        # or: just startapp orders v2
 ```
 
-Tip: `just` loads `.env` automatically in this template.
+This creates `src/apps/orders/` and `src/api/v1/orders/`, adds `"orders"` to
+`LOCAL_APPS`, **and** registers `api/v1/orders/urls.py` under `/api/v1/orders/`.
+Then define models and run `just makemigrations orders && just migrate`.
 
 ---
 
-## 🔐 Authentication
+## Authentication
 
-- Uses JWT (JSON Web Token) via `rest_framework_simplejwt`.
-- Obtain token:
+JWT via `djangorestframework` + `djangorestframework-simplejwt`.
+
 ```http
-POST /api/v1/token/
-{
-  "username": "<user>",
-  "password": "<pass>"
-}
+POST /api/v1/auth/login/     {"username": "...", "password": "..."}
+POST /api/v1/auth/refresh/   {"refresh": "..."}
+POST /api/v1/auth/verify/    {"token": "..."}
 ```
-- Refresh token:
-```http
-POST /api/v1/token/refresh/
-{
-  "refresh": "<refresh_token>"
-}
-```
-- Use `Authorization: Bearer <access_token>` for protected endpoints.
+
+Send `Authorization: Bearer <access>` on protected endpoints. Endpoints require
+authentication by default (`DEFAULT_PERMISSION_CLASSES`); set
+`permission_classes = ()` on a view to make it public.
+
+Refresh tokens rotate and the old one is blacklisted
+(`rest_framework_simplejwt.token_blacklist` is installed, so this actually takes
+effect). Lifetimes come from `JWT_ACCESS_MINUTES` / `JWT_REFRESH_DAYS`.
 
 ---
 
-## 📚 API Structure & Versioning
+## Settings
 
-- All API endpoints are grouped under `/api/v1/`.
-- Add new versions (e.g., `/api/v2/`) by extending the `apps` and `config/urls` modules.
-- Example endpoints:
-  - `/api/v1/account/` (user management)
-  - `/api/v1/core/` (core business logic)
+`base.py` holds everything shared; `dev.py` and `prod.py` import it with
+`from .base import *`. `DJANGO_SETTINGS_MODULE` defaults to `config.settings.dev`
+for `manage.py` and `config.settings.prod` for the ASGI/WSGI servers; both
+compose files set it explicitly.
+
+Only genuine debug tooling (debug toolbar, django-extensions, query counter) is
+gated behind `if DEBUG` — JWT and CORS configuration applies either way.
+
+All configuration is environment-driven; see `.env.example` for the full list
+with comments. The ones you must set before going live:
+
+| Variable | Why |
+|---|---|
+| `DJANGO_SECRET_KEY` | Generated into `.env` at project creation. Rotate for production. |
+| `ALLOWED_HOSTS` | Comma-separated; Django rejects everything else. |
+| `CORS_ALLOWED_ORIGINS` | Production sets no default, so browsers are blocked until you list origins. |
+| `CSRF_TRUSTED_ORIGINS` | Needed for the admin behind HTTPS. |
+| `SECURE_HSTS_SECONDS` | Defaults to `0`. Raise to `31536000` **after** TLS is confirmed. |
+| `SENTRY_DSN` | Optional; Sentry initialises only when set. |
+
+Verify with `just check`, which runs Django's deployment checklist.
 
 ---
 
-## 🛠️ Development Tools
+## Testing
 
-- **Django Debug Toolbar** (dev only)
-- **Django Extensions** (dev only)
-- **Scripts**: Use `scripts/backup.sh` for DB backups, `scripts/entrypoint.sh` for Docker entrypoint
-
----
-
-## 📝 Environment Variables
-
-Set these for development/production as needed:
-- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`
-- Database: `DB_NAME`, `DB_USER_NM`, `DB_USER_PW`, `DB_IP`, `DB_PORT`
-- Logging: `LOGGING_TELEGRAM_BOT_TOKEN`, `LOGGING_TELEGRAM_CHAT_ID`
-
----
-
-## 🧪 Testing
-
-Run tests with:
 ```bash
-python manage.py test
+just test              # pytest, needs a reachable Postgres
+just check-migrations  # fails if a model change has no migration
+just lint              # ruff
 ```
 
----
-
-## 🤝 Contributing
-
-1. Fork the repo & create your branch
-2. Make changes with clear commit messages
-3. Ensure all tests pass
-4. Submit a pull request
+Tests live in `src/tests/` and use `factory-boy` (`tests/factories.py`).
 
 ---
 
-## 📬 Contact
+## Deployment
 
-For questions or support, open an issue or contact the maintainer.
+`docker-compose.prod.yml` runs the same image with `config.settings.prod`,
+health-gated startup and an explicit bridge network. Publish behind a TLS
+terminating reverse proxy; the app trusts `X-Forwarded-Proto`.
+
+The entrypoint runs `migrate` and `collectstatic`, then `exec`s uvicorn (so
+signals reach it). It deliberately does **not** run `makemigrations` — migrations
+are source code. When several replicas boot together, set `RUN_MIGRATIONS=False`
+and apply migrations from a single job.
+
+Static files and uploads are written to `CDN_ROOT` (`/cdn` in the image), which
+is where the `app_data` volume is mounted. Keep those in sync if you change one.
+
+GitHub Actions workflows for dev and prod live in `.github/workflows/`; the
+secrets they need are documented in `docs/deployment/GITHUB-SECRETS.md`.
+
+---
+
+## Logging
+
+Console logging is colourised. If `LOGGING_TELEGRAM_BOT_TOKEN` and
+`LOGGING_TELEGRAM_CHAT_ID` are set, unhandled 500s are pushed to Telegram from a
+background thread. Tracebacks are **off** by default
+(`LOGGING_TELEGRAM_INCLUDE_TRACEBACK`) because they can contain request data —
+turn them on only for a private chat.
