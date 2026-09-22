@@ -20,6 +20,10 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          # Every job runs `uv sync` on the same root project, so without a
+          # distinct suffix they all compute the same cache key and race to
+          # reserve it ("another job may be creating this cache").
+          cache-suffix: lint
       - run: uv sync --locked
       - name: ruff
         run: uv run ruff check .
@@ -35,6 +39,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          cache-suffix: template-tests
       - run: uv sync --locked
       - run: uv run pytest tests -q
 
@@ -75,6 +80,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          cache-suffix: ${{ matrix.api_framework }}-${{ matrix.admin_ui }}-${{ matrix.background_task }}
       - run: uv sync --locked
 
       # Must be a real key: `check --deploy` rejects anything under 50 chars
@@ -131,6 +137,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          cache-suffix: docker-smoke
       - run: uv sync --locked
 
       - name: Generate project
