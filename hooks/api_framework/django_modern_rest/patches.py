@@ -12,6 +12,7 @@ DRF_ONLY_PACKAGES = (
     "djangorestframework",
     "djangorestframework-simplejwt",
     "drf-spectacular",
+    "drf-standardized-errors",
     "django-filter",
 )
 
@@ -46,7 +47,8 @@ def apply_settings(patcher: FilePatcher) -> None:
         r' {4}"rest_framework_simplejwt\.token_blacklist",\n'
         r' {4}"corsheaders",\n'
         r' {4}"django_filters",\n'
-        r' {4}"drf_spectacular",\n',
+        r' {4}"drf_spectacular",\n'
+        r' {4}"drf_standardized_errors",\n',
         '    "dmr",\n    "corsheaders",\n',
         marker='    "dmr",',
         flags=re.MULTILINE,
@@ -78,6 +80,9 @@ def _dmr_settings_block() -> str:
         '    "validate_responses": True,\n'
         '    "semantic_responses": True,\n'
         '    "global_error_handler": "core.api.exceptions.global_error_handler",\n'
+        # No provider declares a 500 spec, so validating one downgrades every
+        # genuine 500 to a 422 complaining the status is undocumented.
+        '    "exclude_validate_responses": frozenset({500}),\n'
         "}\n"
         "\n"
         'AUTH_USER_MODEL = "account.User"\n'
@@ -92,6 +97,7 @@ def apply_dev_urls(patcher: FilePatcher) -> None:
 
 
 def apply_full_file_replacements(patcher: FilePatcher) -> None:
+    replace_file(patcher, "src/core/api/errors.py", "core_api_errors.py")
     replace_file(patcher, "src/core/api/views.py", "core_api_views.py")
     replace_file(patcher, "src/core/api/exceptions.py", "core_api_exceptions.py")
     replace_file(patcher, "src/core/utils/pagination.py", "core_utils_pagination.py")

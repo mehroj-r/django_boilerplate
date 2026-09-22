@@ -52,6 +52,7 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "django_filters",
     "drf_spectacular",
+    "drf_standardized_errors",
     "django_softdelete",
 ]
 
@@ -226,7 +227,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "core.utils.pagination.CustomPagination",
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_SCHEMA_CLASS": "core.api.errors.EnvelopedAutoSchema",
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
@@ -236,7 +237,18 @@ REST_FRAMEWORK = {
         "user": config("THROTTLE_RATE_USER", default="1000/min"),
     },
     "PAGE_SIZE": 10,
-    "EXCEPTION_HANDLER": "core.api.exceptions.api_exception_handler",
+    # Must stay drf-standardized-errors' own callable: its AutoSchema compares
+    # the view's handler against it by identity and quietly stops documenting
+    # error responses if it does not match. Customize via DRF_STANDARDIZED_ERRORS.
+    "EXCEPTION_HANDLER": "drf_standardized_errors.handler.exception_handler",
+}
+
+DRF_STANDARDIZED_ERRORS = {
+    "EXCEPTION_HANDLER_CLASS": "core.api.exceptions.ApiExceptionHandler",
+    "EXCEPTION_FORMATTER_CLASS": "core.api.errors.EnvelopedExceptionFormatter",
+    # Without this, unhandled exceptions skip the envelope while DEBUG is on,
+    # so dev and prod would disagree on the shape of a 500.
+    "ENABLE_IN_DEBUG_FOR_UNHANDLED_EXCEPTIONS": True,
 }
 
 SPECTACULAR_SETTINGS = {
@@ -245,6 +257,22 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v[0-9]+",
+    # Replaces drf-spectacular's own enum hook; the error-code enums are built
+    # per operation, and its hook warns on every one of them.
+    "POSTPROCESSING_HOOKS": ["drf_standardized_errors.openapi_hooks.postprocess_schema_enums"],
+    "ENUM_NAME_OVERRIDES": {
+        "ValidationErrorEnum": "drf_standardized_errors.openapi_serializers.ValidationErrorEnum.choices",
+        "ClientErrorEnum": "drf_standardized_errors.openapi_serializers.ClientErrorEnum.choices",
+        "ServerErrorEnum": "drf_standardized_errors.openapi_serializers.ServerErrorEnum.choices",
+        "ErrorCode401Enum": "drf_standardized_errors.openapi_serializers.ErrorCode401Enum.choices",
+        "ErrorCode403Enum": "drf_standardized_errors.openapi_serializers.ErrorCode403Enum.choices",
+        "ErrorCode404Enum": "drf_standardized_errors.openapi_serializers.ErrorCode404Enum.choices",
+        "ErrorCode405Enum": "drf_standardized_errors.openapi_serializers.ErrorCode405Enum.choices",
+        "ErrorCode406Enum": "drf_standardized_errors.openapi_serializers.ErrorCode406Enum.choices",
+        "ErrorCode415Enum": "drf_standardized_errors.openapi_serializers.ErrorCode415Enum.choices",
+        "ErrorCode429Enum": "drf_standardized_errors.openapi_serializers.ErrorCode429Enum.choices",
+        "ErrorCode500Enum": "drf_standardized_errors.openapi_serializers.ErrorCode500Enum.choices",
+    },
 }
 
 AUTH_USER_MODEL = "account.User"

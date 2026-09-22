@@ -1,6 +1,8 @@
 from rest_framework import generics, mixins, status
 from rest_framework.response import Response
 
+from core.api.errors import envelope_from_data
+
 
 class CustomResponseMixin:
     """
@@ -16,16 +18,15 @@ class CustomResponseMixin:
     - For error:
         {
             "success": false,
-            "message": <ERROR_MESSAGE>,
-            "error": <error_data>
+            "message": <summary>,
+            "error": {"type": <type>, "errors": [{"code", "detail", "attr"}]}
         }
-    CAUTION: This mixin is only functional for the exceptions handled by DRF.
-             It does not handle exceptions raised outside the DRF scope.
-             For the rest, see core.api.exceptions.api_exception_handler.
+    Raised exceptions are enveloped by drf-standardized-errors instead (see
+    core.api.errors); this mixin only catches 4xx responses a view returned by
+    hand, which carry no per-field detail to report.
     """
 
     SUCCESS_MESSAGE = "OK"
-    ERROR_MESSAGE = "NOT OK"
     NO_BODY_STATUS_CODES = {
         status.HTTP_204_NO_CONTENT,
         status.HTTP_205_RESET_CONTENT,
@@ -59,11 +60,7 @@ class CustomResponseMixin:
         return response
 
     def _error_response(self, response: Response) -> Response:
-        response.data = {
-            "success": False,
-            "message": self.ERROR_MESSAGE,
-            "error": response.data,
-        }
+        response.data = envelope_from_data(response.data, response.status_code)
         return response
 
     @staticmethod

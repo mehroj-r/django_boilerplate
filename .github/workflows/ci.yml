@@ -112,6 +112,14 @@ jobs:
         working-directory: ./build
         run: uv run src/manage.py makemigrations --check --dry-run
 
+      # Proves EnvelopedAutoSchema still describes what the API returns; a
+      # silently-skipped override shows up here as a schema with bare
+      # {type, errors} error bodies, or as enum warnings.
+      - name: OpenAPI schema is valid and warning-free
+        if: matrix.api_framework == 'drf'
+        working-directory: ./build
+        run: uv run src/manage.py spectacular --validate --fail-on-warn --file /dev/null
+
       - name: Test suite
         working-directory: ./build
         run: uv run pytest -q
